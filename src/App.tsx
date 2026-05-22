@@ -1,328 +1,649 @@
-import { useState, useRef, useMemo } from 'react';
-import { pdf } from '@react-pdf/renderer';
-import { Layout } from './components/Layout';
-import { JobEditor } from './components/DataEditor/JobEditor';
-import { SkillCategoryEditor } from './components/DataEditor/SkillCategoryEditor';
-import { EducationEditor } from './components/DataEditor/EducationEditor';
-import { ProjectEditor } from './components/DataEditor/ProjectEditor';
-import { TagFilter } from './components/TagFilter/TagFilter';
-import { ResumePreview } from './components/Preview/ResumePreview';
-import { ResumePDF } from './components/PDF/ResumePDF';
-import { useResumeData } from './hooks/useResumeData';
-import { useTags, filterResumeData } from './hooks/useTags';
-import { exportToJson, importFromJson } from './utils/export';
-import { TemplateType } from './types/resume';
+import { useEffect, useMemo, useState } from 'react';
 
-function App() {
+import type { ResumeData } from './types/resume';
+import {
+  loadResumeData,
+  saveResumeData,
+  getEmptyResumeData,
+  loadSettings,
+  saveSettings,
+  type AppSettings,
+} from './utils/storage';
+import { exportToJson, importFromJsonFile, generateId } from './utils/export';
+
+import { useUndoRedo } from './hooks/useUndoRedo';
+import { useTags } from './hooks/useTags';
+import { useSaveStatus } from './hooks/useSaveStatus';
+import { useKeyboard } from './hooks/useKeyboard';
+
+import { Button } from './components/ui/Button';
+import { SaveStatus } from './components/ui/SaveStatus';
+import { Icon, Kbd } from './components/ui/Icons';
+
+import { JobCard } from './components/Editor/JobCard';
+import { SkillCategoryCard } from './components/Editor/SkillCategoryCard';
+import { EducationCard } from './components/Editor/EducationCard';
+import { ProjectCard } from './components/Editor/ProjectCard';
+import { PersonalInfoEditor } from './components/Editor/PersonalInfoEditor';
+import { BulkBar } from './components/Editor/BulkBar';
+import { useDragReorder, reorderById } from './components/Editor/useDragReorder';
+
+import { TagManager } from './components/TagManager/TagManager';
+import { CommandPalette, type CommandTarget } from './components/CommandPalette/CommandPalette';
+import { Generator } from './components/Generator/Generator';
+
+type SectionKey = 'personal' | 'jobs' | 'skills' | 'education' | 'projects';
+
+const SECTIONS: Array<{ key: SectionKey; label: string; icon: typeof Icon.User }> = [
+  { key: 'personal', label: 'Personal Info', icon: Icon.User },
+  { key: 'jobs', label: 'Work Experience', icon: Icon.Briefcase },
+  { key: 'skills', label: 'Skills', icon: Icon.Wrench },
+  { key: 'education', label: 'Education', icon: Icon.GraduationCap },
+  { key: 'projects', label: 'Projects', icon: Icon.Folder },
+];
+
+export default function App() {
+  // ── Settings (theme/density/template/font) ────────────────────────────────
+  const [settings, setSettings] = useState<AppSettings>(loadSettings);
+  useEffect(() => {
+    saveSettings(settings);
+    const r = document.documentElement;
+    r.dataset.mode = settings.dark ? 'dark' : 'light';
+    r.dataset.aesthetic = settings.aesthetic;
+    r.dataset.density = settings.density;
+  }, [settings]);
+
+  const setSetting = <K extends keyof AppSettings>(k: K, v: AppSettings[K]) =>
+    setSettings((s) => ({ ...s, [k]: v }));
+
+  // ── Resume data with undo/redo + localStorage persistence ─────────────────
+  const initialData = useMemo<ResumeData>(() => loadResumeData() || getEmptyResumeData(), []);
+  const { state: data, set: setData, undo, redo, replace, canUndo, canRedo } = useUndoRedo(initialData);
+  const saveStatus = useSaveStatus(data, 700);
+
+  useEffect(() => {
+    saveResumeData(data);
+  }, [data]);
+
+  // ── App state ─────────────────────────────────────────────────────────────
   const [mode, setMode] = useState<'edit' | 'generate'>('edit');
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [template, setTemplate] = useState<TemplateType>('single-column');
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [section, setSection] = useState<SectionKey>('jobs');
+  const [cmdOpen, setCmdOpen] = useState(false);
+  const [tagMgrOpen, setTagMgrOpen] = useState(false);
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [selectedBullets, setSelectedBullets] = useState<Set<string>>(() => new Set());
 
-  const {
-    data,
-    setFullData,
-    updatePersonalInfo,
-    addJob,
-    updateJob,
-    deleteJob,
-    addJobBullet,
-    updateJobBullet,
-    deleteJobBullet,
-    addSkillCategory,
-    updateSkillCategory,
-    deleteSkillCategory,
-    addSkill,
-    updateSkill,
-    deleteSkill,
-    addEducation,
-    updateEducation,
-    deleteEducation,
-    addEducationBullet,
-    updateEducationBullet,
-    deleteEducationBullet,
-    addProject,
-    updateProject,
-    deleteProject,
-    addProjectBullet,
-    updateProjectBullet,
-    deleteProjectBullet,
-  } = useResumeData();
+  // Derive allTags + tagCounts
+  const { allTags, tagCounts } = useTags(data);
 
-  const allTags = useTags(data);
+  // Hotkeys
+  useKeyboard('mod+k', () => setCmdOpen((o) => !o), []);
+  useKeyboard('mod+z', () => undo(), [undo]);
+  useKeyboard('mod+shift+z', () => redo(), [redo]);
 
-  const filteredData = useMemo(
-    () => filterResumeData(data, selectedTags),
-    [data, selectedTags]
-  );
+  // Editor section drag-reorder (jobs / skill cats / education / projects)
+  const editorDnd = useDragReorder((from, to) => {
+    if (section === 'jobs') setData((d) => ({ ...d, jobs: reorderById(d.jobs, from, to) }));
+    if (section === 'skills')
+      setData((d) => ({ ...d, skillCategories: reorderById(d.skillCategories, from, to) }));
+    if (section === 'education')
+      setData((d) => ({ ...d, education: reorderById(d.education, from, to) }));
+    if (section === 'projects')
+      setData((d) => ({ ...d, projects: reorderById(d.projects, from, to) }));
+  });
 
-  const toggleTag = (tag: string) => {
-    setSelectedTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
-    );
+  const toggleExpanded = (id: string) =>
+    setExpanded((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+
+  const onSelectBullet = (id: string) =>
+    setSelectedBullets((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+
+  // Bulk operations
+  const bulkAddTag = (tag: string) => {
+    setData((d) => ({
+      ...d,
+      jobs: d.jobs.map((j) => ({
+        ...j,
+        bullets: j.bullets.map((b) =>
+          selectedBullets.has(b.id) && !b.tags.includes(tag) ? { ...b, tags: [...b.tags, tag] } : b,
+        ),
+      })),
+      education: d.education.map((e) => ({
+        ...e,
+        bullets: e.bullets.map((b) =>
+          selectedBullets.has(b.id) && !b.tags.includes(tag) ? { ...b, tags: [...b.tags, tag] } : b,
+        ),
+      })),
+      projects: d.projects.map((p) => ({
+        ...p,
+        bullets: p.bullets.map((b) =>
+          selectedBullets.has(b.id) && !b.tags.includes(tag) ? { ...b, tags: [...b.tags, tag] } : b,
+        ),
+      })),
+    }));
+  };
+  const bulkDelete = () => {
+    if (!confirm(`Delete ${selectedBullets.size} bullets?`)) return;
+    setData((d) => ({
+      ...d,
+      jobs: d.jobs.map((j) => ({ ...j, bullets: j.bullets.filter((b) => !selectedBullets.has(b.id)) })),
+      education: d.education.map((e) => ({ ...e, bullets: e.bullets.filter((b) => !selectedBullets.has(b.id)) })),
+      projects: d.projects.map((p) => ({ ...p, bullets: p.bullets.filter((b) => !selectedBullets.has(b.id)) })),
+    }));
+    setSelectedBullets(new Set());
   };
 
-  const clearTags = () => setSelectedTags([]);
+  // Tag manager global rename / delete
+  const globalRename = (oldTag: string, newTag: string) => {
+    if (!newTag || newTag === oldTag) return;
+    const map = (tags: string[]) =>
+      tags.map((t) => (t === oldTag ? newTag : t)).filter((t, i, a) => a.indexOf(t) === i);
+    setData((d) => ({
+      ...d,
+      jobs: d.jobs.map((j) => ({
+        ...j,
+        tags: map(j.tags),
+        bullets: j.bullets.map((b) => ({ ...b, tags: map(b.tags) })),
+      })),
+      skillCategories: d.skillCategories.map((c) => ({
+        ...c,
+        tags: map(c.tags),
+        skills: c.skills.map((s) => ({ ...s, tags: map(s.tags) })),
+      })),
+      education: d.education.map((e) => ({
+        ...e,
+        tags: map(e.tags),
+        bullets: e.bullets.map((b) => ({ ...b, tags: map(b.tags) })),
+      })),
+      projects: d.projects.map((p) => ({
+        ...p,
+        tags: map(p.tags),
+        bullets: p.bullets.map((b) => ({ ...b, tags: map(b.tags) })),
+      })),
+    }));
+  };
+  const globalDelete = (tag: string) => {
+    const drop = (tags: string[]) => tags.filter((t) => t !== tag);
+    setData((d) => ({
+      ...d,
+      jobs: d.jobs.map((j) => ({
+        ...j,
+        tags: drop(j.tags),
+        bullets: j.bullets.map((b) => ({ ...b, tags: drop(b.tags) })),
+      })),
+      skillCategories: d.skillCategories.map((c) => ({
+        ...c,
+        tags: drop(c.tags),
+        skills: c.skills.map((s) => ({ ...s, tags: drop(s.tags) })),
+      })),
+      education: d.education.map((e) => ({
+        ...e,
+        tags: drop(e.tags),
+        bullets: e.bullets.map((b) => ({ ...b, tags: drop(b.tags) })),
+      })),
+      projects: d.projects.map((p) => ({
+        ...p,
+        tags: drop(p.tags),
+        bullets: p.bullets.map((b) => ({ ...b, tags: drop(b.tags) })),
+      })),
+    }));
+  };
 
-  const handleExportJson = () => exportToJson(data);
-
-  const handleImportJson = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Import / Export
+  const handleImportJson = async () => {
     try {
-      const imported = await importFromJson(file);
-      setFullData(imported);
-    } catch (err) {
-      alert('Failed to import: ' + (err as Error).message);
+      const imported = await importFromJsonFile();
+      if (!confirm('Replace current resume data with imported JSON? You can Undo afterward.')) return;
+      replace(imported);
+      setExpanded(new Set());
+    } catch (e) {
+      alert('Import failed: ' + (e as Error).message);
     }
-    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+  const handleExportJson = () => exportToJson(data);
+  const handleClear = () => {
+    if (!confirm('Clear ALL resume data? This can be undone with ⌘Z.')) return;
+    setData(getEmptyResumeData());
   };
 
-  const handleExportPdf = async () => {
-    const blob = await pdf(<ResumePDF data={filteredData} template={template} />).toBlob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'resume.pdf';
-    a.click();
-    URL.revokeObjectURL(url);
+  const sectionCounts: Record<SectionKey, number> = {
+    personal: 1,
+    jobs: data.jobs.length,
+    skills: data.skillCategories.length,
+    education: data.education.length,
+    projects: data.projects.length,
   };
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <Layout mode={mode} onModeChange={setMode}>
-      {mode === 'edit' ? (
-        <div className="space-y-6">
-          {/* Import/Export */}
-          <div className="flex gap-3">
-            <button
-              onClick={handleExportJson}
-              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-            >
-              Export JSON
-            </button>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
-            >
-              Import JSON
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json"
-              onChange={handleImportJson}
-              className="hidden"
+    <div className="app">
+      <div className="topbar">
+        <div className="brand">
+          <svg className="brand-mark" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M12 1 14.5 9.5 23 12 14.5 14.5 12 23 9.5 14.5 1 12 9.5 9.5Z"
+              fill="currentColor"
             />
-          </div>
+          </svg>
+          <span>CV Studio</span>
+        </div>
+        <div style={{ width: 1, height: 20, background: 'var(--border)', margin: '0 4px' }} />
+        <div className="mode-switch">
+          <button className={mode === 'edit' ? 'active' : ''} onClick={() => setMode('edit')}>
+            <Icon.Sliders size={12} stroke={2} /> Edit
+          </button>
+          <button className={mode === 'generate' ? 'active' : ''} onClick={() => setMode('generate')}>
+            <Icon.Sparkles size={12} stroke={2} /> Generate
+          </button>
+        </div>
 
-          {/* Personal Info */}
-          <section className="bg-white rounded-lg p-4 shadow">
-            <h2 className="text-lg font-semibold mb-3">Personal Information</h2>
-            <div className="grid grid-cols-2 gap-3">
-              <input
-                type="text"
-                value={data.personalInfo.name}
-                onChange={(e) => updatePersonalInfo({ name: e.target.value })}
-                placeholder="Full Name"
-                className="p-2 border border-gray-300 rounded"
-              />
-              <input
-                type="email"
-                value={data.personalInfo.email}
-                onChange={(e) => updatePersonalInfo({ email: e.target.value })}
-                placeholder="Email"
-                className="p-2 border border-gray-300 rounded"
-              />
-              <input
-                type="tel"
-                value={data.personalInfo.phone || ''}
-                onChange={(e) => updatePersonalInfo({ phone: e.target.value || undefined })}
-                placeholder="Phone"
-                className="p-2 border border-gray-300 rounded"
-              />
-              <input
-                type="text"
-                value={data.personalInfo.location || ''}
-                onChange={(e) => updatePersonalInfo({ location: e.target.value || undefined })}
-                placeholder="Location"
-                className="p-2 border border-gray-300 rounded"
-              />
-              <input
-                type="text"
-                value={data.personalInfo.linkedin || ''}
-                onChange={(e) => updatePersonalInfo({ linkedin: e.target.value || undefined })}
-                placeholder="LinkedIn"
-                className="p-2 border border-gray-300 rounded"
-              />
-              <input
-                type="text"
-                value={data.personalInfo.website || ''}
-                onChange={(e) => updatePersonalInfo({ website: e.target.value || undefined })}
-                placeholder="Website"
-                className="p-2 border border-gray-300 rounded"
-              />
-            </div>
-          </section>
+        <span style={{ flex: 1 }} />
 
-          {/* Jobs */}
-          <section className="bg-white rounded-lg p-4 shadow">
-            <div className="flex justify-between items-center mb-3">
-              <h2 className="text-lg font-semibold">Work Experience</h2>
-              <button
-                onClick={addJob}
-                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-              >
-                + Add Job
-              </button>
-            </div>
-            <div className="space-y-4">
-              {data.jobs.map((job) => (
-                <JobEditor
-                  key={job.id}
-                  job={job}
-                  onChange={(updates) => updateJob(job.id, updates)}
-                  onDelete={() => deleteJob(job.id)}
-                  onAddBullet={() => addJobBullet(job.id)}
-                  onUpdateBullet={(bulletId, updates) => updateJobBullet(job.id, bulletId, updates)}
-                  onDeleteBullet={(bulletId) => deleteJobBullet(job.id, bulletId)}
-                  allTags={allTags}
-                />
+        <SaveStatus status={saveStatus} />
+
+        <button
+          className="btn ghost sm"
+          onClick={() => setCmdOpen(true)}
+          style={{ gap: 8, paddingLeft: 8 }}
+        >
+          <Icon.Search size={13} />
+          <span style={{ color: 'var(--text-muted)' }}>Search</span>
+          <Kbd>⌘</Kbd>
+          <Kbd>K</Kbd>
+        </button>
+
+        <Button size="sm" variant="ghost" icon={Icon.Tags} onClick={() => setTagMgrOpen(true)} tip="Tag manager">
+          Tags
+        </Button>
+
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={!canUndo}
+          icon={Icon.Undo}
+          onClick={undo}
+          tip="Undo (⌘Z)"
+        />
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={!canRedo}
+          icon={Icon.Redo}
+          onClick={redo}
+          tip="Redo (⌘⇧Z)"
+        />
+        <Button
+          size="sm"
+          variant="ghost"
+          icon={settings.dark ? Icon.Sun : Icon.Moon}
+          onClick={() => setSetting('dark', !settings.dark)}
+          tip={settings.dark ? 'Light mode' : 'Dark mode'}
+        />
+      </div>
+
+      {mode === 'edit' ? (
+        <div className="body">
+          <aside className="sidebar">
+            <div className="sidebar-head">Sections</div>
+            <nav className="sidebar-nav">
+              {SECTIONS.map((s) => (
+                <button
+                  key={s.key}
+                  className={'nav-item' + (section === s.key ? ' active' : '')}
+                  onClick={() => setSection(s.key)}
+                >
+                  <span className="nav-icon"><s.icon size={15} /></span>
+                  <span className="nav-label">{s.label}</span>
+                  <span className="nav-count">{sectionCounts[s.key]}</span>
+                </button>
               ))}
-              {data.jobs.length === 0 && (
-                <p className="text-gray-400 text-sm">No jobs added yet.</p>
-              )}
+            </nav>
+            <div className="sidebar-foot">
+              <Button size="sm" variant="ghost" icon={Icon.Upload} onClick={handleImportJson}>
+                Import JSON
+              </Button>
+              <Button size="sm" variant="ghost" icon={Icon.Download} onClick={handleExportJson}>
+                Export JSON
+              </Button>
+              {(data.jobs.length || data.skillCategories.length || data.education.length || data.projects.length) ? (
+                <Button size="sm" variant="ghost" icon={Icon.Trash} onClick={handleClear}>
+                  Clear all data
+                </Button>
+              ) : null}
             </div>
-          </section>
+          </aside>
 
-          {/* Skills */}
-          <section className="bg-white rounded-lg p-4 shadow">
-            <div className="flex justify-between items-center mb-3">
-              <h2 className="text-lg font-semibold">Skills</h2>
-              <button
-                onClick={addSkillCategory}
-                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-              >
-                + Add Category
-              </button>
-            </div>
-            <div className="space-y-4">
-              {data.skillCategories.map((cat) => (
-                <SkillCategoryEditor
-                  key={cat.id}
-                  category={cat}
-                  onChange={(updates) => updateSkillCategory(cat.id, updates)}
-                  onDelete={() => deleteSkillCategory(cat.id)}
-                  onAddSkill={() => addSkill(cat.id)}
-                  onUpdateSkill={(skillId, updates) => updateSkill(cat.id, skillId, updates)}
-                  onDeleteSkill={(skillId) => deleteSkill(cat.id, skillId)}
-                  allTags={allTags}
-                />
-              ))}
-              {data.skillCategories.length === 0 && (
-                <p className="text-gray-400 text-sm">No skill categories added yet.</p>
-              )}
-            </div>
-          </section>
-
-          {/* Education */}
-          <section className="bg-white rounded-lg p-4 shadow">
-            <div className="flex justify-between items-center mb-3">
-              <h2 className="text-lg font-semibold">Education</h2>
-              <button
-                onClick={addEducation}
-                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-              >
-                + Add Education
-              </button>
-            </div>
-            <div className="space-y-4">
-              {data.education.map((edu) => (
-                <EducationEditor
-                  key={edu.id}
-                  education={edu}
-                  onChange={(updates) => updateEducation(edu.id, updates)}
-                  onDelete={() => deleteEducation(edu.id)}
-                  onAddBullet={() => addEducationBullet(edu.id)}
-                  onUpdateBullet={(bulletId, updates) => updateEducationBullet(edu.id, bulletId, updates)}
-                  onDeleteBullet={(bulletId) => deleteEducationBullet(edu.id, bulletId)}
-                  allTags={allTags}
-                />
-              ))}
-              {data.education.length === 0 && (
-                <p className="text-gray-400 text-sm">No education added yet.</p>
-              )}
-            </div>
-          </section>
-
-          {/* Projects */}
-          <section className="bg-white rounded-lg p-4 shadow">
-            <div className="flex justify-between items-center mb-3">
-              <h2 className="text-lg font-semibold">Projects</h2>
-              <button
-                onClick={addProject}
-                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
-              >
-                + Add Project
-              </button>
-            </div>
-            <div className="space-y-4">
-              {data.projects.map((proj) => (
-                <ProjectEditor
-                  key={proj.id}
-                  project={proj}
-                  onChange={(updates) => updateProject(proj.id, updates)}
-                  onDelete={() => deleteProject(proj.id)}
-                  onAddBullet={() => addProjectBullet(proj.id)}
-                  onUpdateBullet={(bulletId, updates) => updateProjectBullet(proj.id, bulletId, updates)}
-                  onDeleteBullet={(bulletId) => deleteProjectBullet(proj.id, bulletId)}
-                  allTags={allTags}
-                />
-              ))}
-              {data.projects.length === 0 && (
-                <p className="text-gray-400 text-sm">No projects added yet.</p>
-              )}
-            </div>
-          </section>
+          <main className="main">
+            <EditorSection
+              section={section}
+              data={data}
+              setData={setData}
+              expanded={expanded}
+              setExpanded={setExpanded}
+              allTags={allTags}
+              tagCounts={tagCounts}
+              chipVariant={settings.chipVariant}
+              editorDnd={editorDnd}
+              selectedBullets={selectedBullets}
+              onSelectBullet={onSelectBullet}
+              toggleExpanded={toggleExpanded}
+            />
+          </main>
         </div>
       ) : (
-        <div className="space-y-6">
-          {/* Controls */}
-          <div className="bg-white rounded-lg p-4 shadow space-y-4">
-            <TagFilter
-              allTags={allTags}
-              selectedTags={selectedTags}
-              onToggleTag={toggleTag}
-              onClearTags={clearTags}
-            />
-
-            <div className="flex gap-4 items-center">
-              <label className="text-sm font-medium text-gray-700">Template:</label>
-              <select
-                value={template}
-                onChange={(e) => setTemplate(e.target.value as TemplateType)}
-                className="p-2 border border-gray-300 rounded"
-              >
-                <option value="single-column">Single Column</option>
-                <option value="two-column">Two Column</option>
-              </select>
-
-              <button
-                onClick={handleExportPdf}
-                className="ml-auto px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-              >
-                Export PDF
-              </button>
-            </div>
-          </div>
-
-          {/* Preview */}
-          <div className="bg-gray-200 p-4 rounded-lg">
-            <ResumePreview data={filteredData} template={template} />
-          </div>
+        <div className="body no-sidebar">
+          <Generator
+            data={data}
+            allTags={allTags}
+            template={settings.template}
+            setTemplate={(v) => setSetting('template', v)}
+            font={settings.font}
+            setFont={(v) => setSetting('font', v)}
+          />
         </div>
       )}
-    </Layout>
+
+      {selectedBullets.size > 0 && mode === 'edit' && (
+        <BulkBar
+          count={selectedBullets.size}
+          allTags={allTags}
+          tagCounts={tagCounts}
+          onAddTag={bulkAddTag}
+          onDelete={bulkDelete}
+          onClear={() => setSelectedBullets(new Set())}
+        />
+      )}
+
+      {cmdOpen && (
+        <CommandPalette
+          data={data}
+          onClose={() => setCmdOpen(false)}
+          onJump={(target: CommandTarget) => {
+            setCmdOpen(false);
+            setSection(target.section);
+            if (target.parentId) setExpanded((s) => new Set([...s, target.parentId!]));
+          }}
+        />
+      )}
+
+      <TagManager
+        open={tagMgrOpen}
+        onClose={() => setTagMgrOpen(false)}
+        data={data}
+        onRename={globalRename}
+        onDelete={globalDelete}
+      />
+    </div>
   );
 }
 
-export default App;
+// ── Editor section frame ────────────────────────────────────────────────────
+interface EditorSectionProps {
+  section: SectionKey;
+  data: ResumeData;
+  setData: (updater: (prev: ResumeData) => ResumeData) => void;
+  expanded: Set<string>;
+  setExpanded: React.Dispatch<React.SetStateAction<Set<string>>>;
+  allTags: string[];
+  tagCounts: Record<string, number>;
+  chipVariant: AppSettings['chipVariant'];
+  editorDnd: ReturnType<typeof useDragReorder>;
+  selectedBullets: Set<string>;
+  onSelectBullet: (id: string) => void;
+  toggleExpanded: (id: string) => void;
+}
+
+function EditorSection(props: EditorSectionProps) {
+  const {
+    section, data, setData, expanded, setExpanded,
+    allTags, tagCounts, chipVariant, editorDnd,
+    selectedBullets, onSelectBullet, toggleExpanded,
+  } = props;
+
+  if (section === 'personal') {
+    return (
+      <>
+        <Head title="Personal Info" subtitle="Contact info shown at the top of every generated resume." />
+        <div className="main-body scroller">
+          <PersonalInfoEditor
+            info={data.personalInfo}
+            onChange={(pi) => setData((d) => ({ ...d, personalInfo: pi }))}
+          />
+        </div>
+      </>
+    );
+  }
+
+  if (section === 'jobs') {
+    const onAdd = () => {
+      const n = { id: generateId(), company: '', title: '', startDate: '', endDate: '', tags: [], bullets: [] };
+      setData((d) => ({ ...d, jobs: [n, ...d.jobs] }));
+      setExpanded((s) => new Set([...s, n.id]));
+    };
+    return (
+      <>
+        <Head
+          title="Work Experience"
+          subtitle={`${data.jobs.length} role${data.jobs.length === 1 ? '' : 's'} · ${data.jobs.reduce(
+            (n, j) => n + j.bullets.length,
+            0,
+          )} bullets · master resume`}
+          onAdd={onAdd}
+          addLabel="Add role"
+        />
+        <div className="main-body scroller">
+          <div className="list">
+            {data.jobs.length === 0 ? (
+              <EmptyState title="No roles yet" sub="Start your master resume by adding the first role." onAdd={onAdd} addLabel="Add role" />
+            ) : (
+              data.jobs.map((j) => (
+                <JobCard
+                  key={j.id}
+                  job={j}
+                  expanded={expanded.has(j.id)}
+                  onToggle={() => toggleExpanded(j.id)}
+                  onChange={(nj) =>
+                    setData((d) => ({ ...d, jobs: d.jobs.map((x) => (x.id === nj.id ? nj : x)) }))
+                  }
+                  onDelete={() => {
+                    if (confirm(`Delete role at ${j.company}?`)) {
+                      setData((d) => ({ ...d, jobs: d.jobs.filter((x) => x.id !== j.id) }));
+                    }
+                  }}
+                  allTags={allTags}
+                  tagCounts={tagCounts}
+                  chipVariant={chipVariant}
+                  dragHandlers={editorDnd}
+                  selectedBullets={selectedBullets}
+                  onSelectBullet={onSelectBullet}
+                />
+              ))
+            )}
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  if (section === 'skills') {
+    const onAdd = () => {
+      const n = { id: generateId(), name: '', skills: [], tags: [] };
+      setData((d) => ({ ...d, skillCategories: [...d.skillCategories, n] }));
+      setExpanded((s) => new Set([...s, n.id]));
+    };
+    return (
+      <>
+        <Head
+          title="Skills"
+          subtitle={`${data.skillCategories.length} categor${data.skillCategories.length === 1 ? 'y' : 'ies'}`}
+          onAdd={onAdd}
+          addLabel="Add category"
+        />
+        <div className="main-body scroller">
+          <div className="list">
+            {data.skillCategories.length === 0 ? (
+              <EmptyState title="No skill categories" sub="Group skills by area: Languages, Cloud, Leadership…" onAdd={onAdd} addLabel="Add category" />
+            ) : (
+              data.skillCategories.map((c) => (
+                <SkillCategoryCard
+                  key={c.id}
+                  cat={c}
+                  expanded={expanded.has(c.id)}
+                  onToggle={() => toggleExpanded(c.id)}
+                  onChange={(nc) =>
+                    setData((d) => ({
+                      ...d,
+                      skillCategories: d.skillCategories.map((x) => (x.id === nc.id ? nc : x)),
+                    }))
+                  }
+                  onDelete={() =>
+                    setData((d) => ({
+                      ...d,
+                      skillCategories: d.skillCategories.filter((x) => x.id !== c.id),
+                    }))
+                  }
+                  allTags={allTags}
+                  tagCounts={tagCounts}
+                  chipVariant={chipVariant}
+                  dragHandlers={editorDnd}
+                />
+              ))
+            )}
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  if (section === 'education') {
+    const onAdd = () => {
+      const n = { id: generateId(), institution: '', degree: '', tags: [], bullets: [] };
+      setData((d) => ({ ...d, education: [...d.education, n] }));
+      setExpanded((s) => new Set([...s, n.id]));
+    };
+    return (
+      <>
+        <Head
+          title="Education"
+          subtitle={`${data.education.length} entr${data.education.length === 1 ? 'y' : 'ies'}`}
+          onAdd={onAdd}
+          addLabel="Add education"
+        />
+        <div className="main-body scroller">
+          <div className="list">
+            {data.education.length === 0 ? (
+              <EmptyState title="No education entries" sub="" onAdd={onAdd} addLabel="Add education" />
+            ) : (
+              data.education.map((e) => (
+                <EducationCard
+                  key={e.id}
+                  ed={e}
+                  expanded={expanded.has(e.id)}
+                  onToggle={() => toggleExpanded(e.id)}
+                  onChange={(ne) =>
+                    setData((d) => ({ ...d, education: d.education.map((x) => (x.id === ne.id ? ne : x)) }))
+                  }
+                  onDelete={() => setData((d) => ({ ...d, education: d.education.filter((x) => x.id !== e.id) }))}
+                  allTags={allTags}
+                  tagCounts={tagCounts}
+                  chipVariant={chipVariant}
+                  dragHandlers={editorDnd}
+                  selectedBullets={selectedBullets}
+                  onSelectBullet={onSelectBullet}
+                />
+              ))
+            )}
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // projects
+  const onAdd = () => {
+    const n = { id: generateId(), name: '', tags: [], bullets: [] };
+    setData((d) => ({ ...d, projects: [n, ...d.projects] }));
+    setExpanded((s) => new Set([...s, n.id]));
+  };
+  return (
+    <>
+      <Head
+        title="Projects"
+        subtitle={`${data.projects.length} project${data.projects.length === 1 ? '' : 's'}`}
+        onAdd={onAdd}
+        addLabel="Add project"
+      />
+      <div className="main-body scroller">
+        <div className="list">
+          {data.projects.length === 0 ? (
+            <EmptyState title="No projects" sub="Side projects, OSS, anything you want to highlight." onAdd={onAdd} addLabel="Add project" />
+          ) : (
+            data.projects.map((p) => (
+              <ProjectCard
+                key={p.id}
+                pr={p}
+                expanded={expanded.has(p.id)}
+                onToggle={() => toggleExpanded(p.id)}
+                onChange={(np) =>
+                  setData((d) => ({ ...d, projects: d.projects.map((x) => (x.id === np.id ? np : x)) }))
+                }
+                onDelete={() => setData((d) => ({ ...d, projects: d.projects.filter((x) => x.id !== p.id) }))}
+                allTags={allTags}
+                tagCounts={tagCounts}
+                chipVariant={chipVariant}
+                dragHandlers={editorDnd}
+                selectedBullets={selectedBullets}
+                onSelectBullet={onSelectBullet}
+              />
+            ))
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function Head(props: {
+  title: string;
+  subtitle?: string;
+  onAdd?: () => void;
+  addLabel?: string;
+}) {
+  return (
+    <div className="main-head">
+      <div>
+        <h1>{props.title}</h1>
+        {props.subtitle ? <div className="subtitle">{props.subtitle}</div> : null}
+      </div>
+      {props.onAdd ? (
+        <div className="actions">
+          <Button variant="primary" icon={Icon.Plus} onClick={props.onAdd}>
+            {props.addLabel}
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function EmptyState(props: { title: string; sub: string; onAdd: () => void; addLabel: string }) {
+  return (
+    <div className="empty">
+      <div className="e-title">{props.title}</div>
+      {props.sub ? <div className="e-sub">{props.sub}</div> : null}
+      <Button variant="primary" icon={Icon.Plus} onClick={props.onAdd}>
+        {props.addLabel}
+      </Button>
+    </div>
+  );
+}

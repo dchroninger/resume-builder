@@ -1,3 +1,4 @@
+// Unchanged from your existing types — this is the contract.
 export interface PersonalInfo {
   name: string;
   email: string;

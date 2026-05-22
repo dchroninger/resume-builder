@@ -1,347 +1,241 @@
-import { Document, Page, Text, View, StyleSheet, Link } from '@react-pdf/renderer';
-import { FilteredResumeData, TemplateType } from '../../types/resume';
+// @react-pdf/renderer template that visually matches the HTML preview.
+// Used for PDF export only; the on-screen preview stays HTML (cheaper to
+// re-render than the PDF document tree).
 
-const styles = StyleSheet.create({
-  page: {
-    padding: 30,
-    fontSize: 10,
-    fontFamily: 'Helvetica',
-  },
-  header: {
-    textAlign: 'center',
-    marginBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ccc',
-    paddingBottom: 10,
-  },
-  name: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 5,
-  },
-  contactRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 10,
-    color: '#666',
-    fontSize: 9,
-  },
-  section: {
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    borderBottomWidth: 1,
-    borderBottomColor: '#333',
-    marginBottom: 6,
-    paddingBottom: 2,
-  },
-  itemHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 2,
-  },
-  itemTitle: {
-    fontWeight: 'bold',
-  },
-  itemSubtitle: {
-    color: '#666',
-  },
-  itemDate: {
-    color: '#666',
-    fontSize: 9,
-  },
-  bullet: {
-    flexDirection: 'row',
-    marginLeft: 10,
-    marginTop: 2,
-  },
-  bulletDot: {
-    width: 10,
-  },
-  bulletText: {
-    flex: 1,
-    color: '#444',
-  },
-  skillRow: {
-    marginBottom: 3,
-  },
-  skillCategory: {
-    fontWeight: 'bold',
-  },
-  // Two-column styles
-  twoColContainer: {
-    flexDirection: 'row',
-  },
-  sidebar: {
-    width: '33%',
-    backgroundColor: '#333',
-    padding: 15,
-    color: 'white',
-  },
-  sidebarSection: {
-    marginBottom: 15,
-  },
-  sidebarTitle: {
-    fontSize: 11,
-    fontWeight: 'bold',
-    borderBottomWidth: 1,
-    borderBottomColor: '#666',
-    marginBottom: 6,
-    paddingBottom: 2,
-    color: 'white',
-  },
-  sidebarText: {
-    color: '#ccc',
-    fontSize: 9,
-    marginBottom: 2,
-  },
-  mainContent: {
-    width: '67%',
-    padding: 15,
-  },
-  mainHeader: {
-    marginBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ccc',
-    paddingBottom: 8,
-  },
-  link: {
-    color: '#0066cc',
-    textDecoration: 'none',
-  },
-});
+import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import type { FilteredResumeData, TemplateType, PersonalInfo, Bullet, Skill } from '../../types/resume';
+import { fmtDateRange } from '../../utils/date';
+
+type Font = 'sans' | 'plex' | 'serif';
+
+// Keep in sync with --accent in src/index.css.
+const ACCENT = '#3B82F6';
 
 interface ResumePDFProps {
   data: FilteredResumeData;
   template: TemplateType;
+  font: Font;
+  hideSections?: { jobs?: boolean; skills?: boolean; education?: boolean; projects?: boolean };
 }
 
-function SingleColumnPDF({ data }: { data: FilteredResumeData }) {
-  const { personalInfo, jobs, skillCategories, education, projects } = data;
+// react-pdf ships these three font families by default — no Font.register needed.
+const fontFamily = (f: Font) => (f === 'serif' ? 'Times-Roman' : 'Helvetica');
+const fontBold = (f: Font) => (f === 'serif' ? 'Times-Bold' : 'Helvetica-Bold');
 
+function makeStyles(accent: string, f: Font) {
+  return StyleSheet.create({
+    page: {
+      paddingTop: 42,
+      paddingHorizontal: 48,
+      paddingBottom: 36,
+      fontSize: 10,
+      fontFamily: fontFamily(f),
+      color: '#1A1A1A',
+      lineHeight: 1.4,
+    },
+    name: { fontSize: 22, fontFamily: fontBold(f), letterSpacing: -0.4, marginBottom: 3 },
+    contact: { color: '#555', fontSize: 9.5, flexDirection: 'row', flexWrap: 'wrap', columnGap: 12 },
+    contactPart: { color: '#555' },
+    sectionHeading: {
+      fontSize: 11,
+      fontFamily: fontBold(f),
+      letterSpacing: 1.2,
+      color: accent,
+      textTransform: 'uppercase',
+      marginTop: 14,
+      marginBottom: 4,
+      paddingBottom: 3,
+      borderBottomWidth: 1,
+      borderBottomColor: '#E4E4E7',
+    },
+    role: { marginTop: 8 },
+    roleHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+    roleTitle: { fontSize: 10.5, fontFamily: fontBold(f) },
+    roleCompany: { color: '#444' },
+    roleDate: { color: '#666', fontSize: 9.5 },
+    bulletRow: { flexDirection: 'row', marginLeft: 10, marginTop: 2 },
+    bulletDot: { width: 10, color: '#444' },
+    bulletText: { flex: 1, color: '#222' },
+    skillRow: { flexDirection: 'row', marginTop: 3 },
+    skillLabel: { width: 110, fontFamily: fontBold(f), color: '#222' },
+    skillValues: { flex: 1, color: '#333' },
+    twoColRow: { flexDirection: 'row', marginTop: 8, gap: 24 },
+    twoColLeft: { flex: 1.4 },
+    twoColRight: { flex: 1 },
+    projHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
+    projName: { fontFamily: fontBold(f) },
+    projDesc: { color: '#444', fontSize: 10 },
+  });
+}
+
+function Header({ info, styles }: { info: PersonalInfo; styles: ReturnType<typeof makeStyles> }) {
+  const parts = [info.email, info.phone, info.location, info.linkedin, info.website].filter(Boolean) as string[];
   return (
-    <Page size="LETTER" style={styles.page}>
-      <View style={styles.header}>
-        <Text style={styles.name}>{personalInfo.name || 'Your Name'}</Text>
-        <View style={styles.contactRow}>
-          {personalInfo.email && <Text>{personalInfo.email}</Text>}
-          {personalInfo.phone && <Text>{personalInfo.phone}</Text>}
-          {personalInfo.location && <Text>{personalInfo.location}</Text>}
-          {personalInfo.linkedin && <Text>{personalInfo.linkedin}</Text>}
-          {personalInfo.website && <Text>{personalInfo.website}</Text>}
-        </View>
+    <View>
+      <Text style={styles.name}>{info.name || 'Your Name'}</Text>
+      <View style={styles.contact}>
+        {parts.map((p, i) => (
+          <Text key={i} style={styles.contactPart}>
+            {i > 0 ? '· ' : ''}
+            {p}
+          </Text>
+        ))}
       </View>
+    </View>
+  );
+}
 
-      {skillCategories.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Skills</Text>
-          {skillCategories.map((cat) => (
-            <View key={cat.id} style={styles.skillRow}>
-              <Text>
-                <Text style={styles.skillCategory}>{cat.name}: </Text>
-                {cat.filteredSkills.map((s) => s.name).join(', ')}
+function Bullets({ items, styles }: { items: Bullet[]; styles: ReturnType<typeof makeStyles> }) {
+  return (
+    <>
+      {items.map((b) => (
+        <View key={b.id} style={styles.bulletRow}>
+          <Text style={styles.bulletDot}>•</Text>
+          <Text style={styles.bulletText}>{b.text}</Text>
+        </View>
+      ))}
+    </>
+  );
+}
+
+function ExperienceSection({
+  jobs,
+  styles,
+}: {
+  jobs: FilteredResumeData['jobs'];
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  if (!jobs.length) return null;
+  return (
+    <View>
+      <Text style={styles.sectionHeading}>Experience</Text>
+      {jobs.map((j) => (
+        <View key={j.id} style={styles.role} wrap={false}>
+          <View style={styles.roleHeader}>
+            <View>
+              <Text style={styles.roleTitle}>
+                {j.title}
+                <Text style={{ color: '#666' }}> · </Text>
+                <Text style={styles.roleCompany}>{j.company}</Text>
               </Text>
             </View>
-          ))}
+            <Text style={styles.roleDate}>
+              {fmtDateRange(j.startDate, j.endDate)}
+              {j.location ? ` · ${j.location}` : ''}
+            </Text>
+          </View>
+          <Bullets items={j.filteredBullets} styles={styles} />
         </View>
-      )}
-
-      {jobs.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Experience</Text>
-          {jobs.map((job) => (
-            <View key={job.id} style={{ marginBottom: 8 }}>
-              <View style={styles.itemHeader}>
-                <View>
-                  <Text style={styles.itemTitle}>{job.title}</Text>
-                  <Text style={styles.itemSubtitle}>
-                    {job.company}{job.location && ` • ${job.location}`}
-                  </Text>
-                </View>
-                <Text style={styles.itemDate}>
-                  {job.startDate} – {job.endDate || 'Present'}
-                </Text>
-              </View>
-              {job.filteredBullets.map((bullet) => (
-                <View key={bullet.id} style={styles.bullet}>
-                  <Text style={styles.bulletDot}>•</Text>
-                  <Text style={styles.bulletText}>{bullet.text}</Text>
-                </View>
-              ))}
-            </View>
-          ))}
-        </View>
-      )}
-
-      {projects.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Projects</Text>
-          {projects.map((proj) => (
-            <View key={proj.id} style={{ marginBottom: 8 }}>
-              <View style={styles.itemHeader}>
-                <View>
-                  <Text style={styles.itemTitle}>{proj.name}</Text>
-                  {proj.description && <Text style={styles.itemSubtitle}>{proj.description}</Text>}
-                </View>
-                {proj.url && <Link src={proj.url} style={styles.link}><Text>{proj.url}</Text></Link>}
-              </View>
-              {proj.filteredBullets.map((bullet) => (
-                <View key={bullet.id} style={styles.bullet}>
-                  <Text style={styles.bulletDot}>•</Text>
-                  <Text style={styles.bulletText}>{bullet.text}</Text>
-                </View>
-              ))}
-            </View>
-          ))}
-        </View>
-      )}
-
-      {education.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Education</Text>
-          {education.map((edu) => (
-            <View key={edu.id} style={{ marginBottom: 8 }}>
-              <View style={styles.itemHeader}>
-                <View>
-                  <Text style={styles.itemTitle}>
-                    {edu.degree}{edu.field && ` in ${edu.field}`}
-                  </Text>
-                  <Text style={styles.itemSubtitle}>{edu.institution}</Text>
-                </View>
-                {edu.graduationDate && <Text style={styles.itemDate}>{edu.graduationDate}</Text>}
-              </View>
-              {edu.filteredBullets.map((bullet) => (
-                <View key={bullet.id} style={styles.bullet}>
-                  <Text style={styles.bulletDot}>•</Text>
-                  <Text style={styles.bulletText}>{bullet.text}</Text>
-                </View>
-              ))}
-            </View>
-          ))}
-        </View>
-      )}
-    </Page>
+      ))}
+    </View>
   );
 }
 
-function TwoColumnPDF({ data }: { data: FilteredResumeData }) {
-  const { personalInfo, jobs, skillCategories, education, projects } = data;
-
+function SkillsSection({
+  cats,
+  styles,
+}: {
+  cats: FilteredResumeData['skillCategories'];
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  if (!cats.length) return null;
   return (
-    <Page size="LETTER" style={{ fontFamily: 'Helvetica', fontSize: 10 }}>
-      <View style={styles.twoColContainer}>
-        <View style={styles.sidebar}>
-          <View style={styles.sidebarSection}>
-            <Text style={styles.sidebarTitle}>Contact</Text>
-            {personalInfo.email && <Text style={styles.sidebarText}>{personalInfo.email}</Text>}
-            {personalInfo.phone && <Text style={styles.sidebarText}>{personalInfo.phone}</Text>}
-            {personalInfo.location && <Text style={styles.sidebarText}>{personalInfo.location}</Text>}
-            {personalInfo.linkedin && <Text style={styles.sidebarText}>{personalInfo.linkedin}</Text>}
-            {personalInfo.website && <Text style={styles.sidebarText}>{personalInfo.website}</Text>}
-          </View>
-
-          {skillCategories.length > 0 && (
-            <View style={styles.sidebarSection}>
-              <Text style={styles.sidebarTitle}>Skills</Text>
-              {skillCategories.map((cat) => (
-                <View key={cat.id} style={{ marginBottom: 6 }}>
-                  <Text style={{ color: '#ddd', fontWeight: 'bold', fontSize: 9 }}>{cat.name}</Text>
-                  <Text style={styles.sidebarText}>
-                    {cat.filteredSkills.map((s) => s.name).join(', ')}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
-
-          {education.length > 0 && (
-            <View style={styles.sidebarSection}>
-              <Text style={styles.sidebarTitle}>Education</Text>
-              {education.map((edu) => (
-                <View key={edu.id} style={{ marginBottom: 6 }}>
-                  <Text style={{ color: '#ddd', fontWeight: 'bold', fontSize: 9 }}>
-                    {edu.degree}{edu.field && ` in ${edu.field}`}
-                  </Text>
-                  <Text style={styles.sidebarText}>{edu.institution}</Text>
-                  {edu.graduationDate && (
-                    <Text style={{ color: '#999', fontSize: 8 }}>{edu.graduationDate}</Text>
-                  )}
-                </View>
-              ))}
-            </View>
-          )}
+    <View>
+      <Text style={styles.sectionHeading}>Skills</Text>
+      {cats.map((c) => (
+        <View key={c.id} style={styles.skillRow} wrap={false}>
+          <Text style={styles.skillLabel}>{c.name}</Text>
+          <Text style={styles.skillValues}>{(c.filteredSkills as Skill[]).map((s) => s.name).join(' · ')}</Text>
         </View>
-
-        <View style={styles.mainContent}>
-          <View style={styles.mainHeader}>
-            <Text style={{ fontSize: 18, fontWeight: 'bold' }}>{personalInfo.name || 'Your Name'}</Text>
-          </View>
-
-          {jobs.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Experience</Text>
-              {jobs.map((job) => (
-                <View key={job.id} style={{ marginBottom: 8 }}>
-                  <View style={styles.itemHeader}>
-                    <View>
-                      <Text style={styles.itemTitle}>{job.title}</Text>
-                      <Text style={styles.itemSubtitle}>
-                        {job.company}{job.location && ` • ${job.location}`}
-                      </Text>
-                    </View>
-                    <Text style={styles.itemDate}>
-                      {job.startDate} – {job.endDate || 'Present'}
-                    </Text>
-                  </View>
-                  {job.filteredBullets.map((bullet) => (
-                    <View key={bullet.id} style={styles.bullet}>
-                      <Text style={styles.bulletDot}>•</Text>
-                      <Text style={styles.bulletText}>{bullet.text}</Text>
-                    </View>
-                  ))}
-                </View>
-              ))}
-            </View>
-          )}
-
-          {projects.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Projects</Text>
-              {projects.map((proj) => (
-                <View key={proj.id} style={{ marginBottom: 8 }}>
-                  <View style={styles.itemHeader}>
-                    <View>
-                      <Text style={styles.itemTitle}>{proj.name}</Text>
-                      {proj.description && <Text style={styles.itemSubtitle}>{proj.description}</Text>}
-                    </View>
-                    {proj.url && <Link src={proj.url} style={styles.link}><Text style={{ fontSize: 8 }}>{proj.url}</Text></Link>}
-                  </View>
-                  {proj.filteredBullets.map((bullet) => (
-                    <View key={bullet.id} style={styles.bullet}>
-                      <Text style={styles.bulletDot}>•</Text>
-                      <Text style={styles.bulletText}>{bullet.text}</Text>
-                    </View>
-                  ))}
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
-      </View>
-    </Page>
+      ))}
+    </View>
   );
 }
 
-export function ResumePDF({ data, template }: ResumePDFProps) {
+function ProjectsSection({
+  projects,
+  styles,
+}: {
+  projects: FilteredResumeData['projects'];
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  if (!projects.length) return null;
+  return (
+    <View>
+      <Text style={styles.sectionHeading}>Projects</Text>
+      {projects.map((p) => (
+        <View key={p.id} style={styles.role} wrap={false}>
+          <View style={styles.projHeader}>
+            <Text style={styles.projName}>{p.name}</Text>
+            {p.url ? <Text style={styles.roleDate}>{p.url}</Text> : null}
+          </View>
+          {p.description ? <Text style={styles.projDesc}>{p.description}</Text> : null}
+          <Bullets items={p.filteredBullets} styles={styles} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function EducationSection({
+  education,
+  styles,
+}: {
+  education: FilteredResumeData['education'];
+  styles: ReturnType<typeof makeStyles>;
+}) {
+  if (!education.length) return null;
+  return (
+    <View>
+      <Text style={styles.sectionHeading}>Education</Text>
+      {education.map((ed) => (
+        <View key={ed.id} style={styles.role} wrap={false}>
+          <View style={styles.roleHeader}>
+            <View>
+              <Text style={styles.roleTitle}>
+                {ed.degree}
+                {ed.field ? <Text style={styles.roleCompany}> · {ed.field}</Text> : null}
+              </Text>
+            </View>
+            <Text style={styles.roleDate}>{ed.graduationDate || ''}</Text>
+          </View>
+          <Text style={styles.roleCompany}>{ed.institution}</Text>
+          <Bullets items={ed.filteredBullets} styles={styles} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+export function ResumePDF({ data, template, font, hideSections = {} }: ResumePDFProps) {
+  const styles = makeStyles(ACCENT, font);
+
   return (
     <Document>
-      {template === 'two-column' ? (
-        <TwoColumnPDF data={data} />
-      ) : (
-        <SingleColumnPDF data={data} />
-      )}
+      <Page size="LETTER" style={styles.page}>
+        <Header info={data.personalInfo} styles={styles} />
+        {template === 'two-column' ? (
+          <>
+            {!hideSections.jobs ? <ExperienceSection jobs={data.jobs} styles={styles} /> : null}
+            <View style={styles.twoColRow}>
+              <View style={styles.twoColLeft}>
+                {!hideSections.projects ? <ProjectsSection projects={data.projects} styles={styles} /> : null}
+                {!hideSections.education ? <EducationSection education={data.education} styles={styles} /> : null}
+              </View>
+              <View style={styles.twoColRight}>
+                {!hideSections.skills ? <SkillsSection cats={data.skillCategories} styles={styles} /> : null}
+              </View>
+            </View>
+          </>
+        ) : (
+          <>
+            {!hideSections.jobs ? <ExperienceSection jobs={data.jobs} styles={styles} /> : null}
+            {!hideSections.skills ? <SkillsSection cats={data.skillCategories} styles={styles} /> : null}
+            {!hideSections.projects ? <ProjectsSection projects={data.projects} styles={styles} /> : null}
+            {!hideSections.education ? <EducationSection education={data.education} styles={styles} /> : null}
+          </>
+        )}
+      </Page>
     </Document>
   );
 }
