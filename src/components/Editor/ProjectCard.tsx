@@ -5,6 +5,7 @@ import { Icon } from '../ui/Icons';
 import { BulletRow } from './BulletRow';
 import { useDragReorder, reorderById, type DragHandlers } from './useDragReorder';
 import { generateId } from '../../utils/export';
+import { isActive } from '../../utils/selection';
 import type { ChipVariant } from '../TagInput/Chip';
 import { AutoTextarea } from '../ui/AutoTextarea';
 
@@ -44,6 +45,9 @@ export function ProjectCard({
   const bulletDnd = useDragReorder((from, to) =>
     onChange({ ...pr, bullets: reorderById(pr.bullets, from, to) }),
   );
+
+  // Render list only; all mutations above still use the full bullets array.
+  const visible = pr.bullets.filter(isActive);
 
   return (
     <div
@@ -108,11 +112,11 @@ export function ProjectCard({
             <h2 style={{ fontSize: 'var(--fs-sm)', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
               Bullets
             </h2>
-            <span className="count">{pr.bullets.length}</span>
+            <span className="count">{visible.length}</span>
             <span className="grow" />
             <Button size="sm" icon={Icon.Plus} onClick={addBullet}>Add</Button>
           </div>
-          {pr.bullets.map((b) => (
+          {visible.map((b) => (
             <BulletRow
               key={b.id}
               bullet={b}

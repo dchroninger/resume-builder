@@ -929,6 +929,9 @@ input:focus, textarea:focus, button:focus { outline: none; }
   transform-origin: top center;
 }
 .resume-sheet * { box-sizing: border-box; }
+.resume-sheet .r-summary { margin: 0 0 12px; }
+.resume-sheet .r-summary p { margin: 0; line-height: 1.5; color: #27272a; }
+.resume-sheet[data-density='compact'] .r-summary { margin-bottom: 8px; }
 .resume-sheet h1 { font-size: 22pt; margin: 0 0 4px; font-weight: 700; letter-spacing: -0.01em; color: #18181b; }
 .resume-sheet .contact { color: #555; font-size: 9.5pt; display: flex; flex-wrap: wrap; gap: 0 12px; }
 .resume-sheet .contact span { display: inline-flex; align-items: center; gap: 4px; }
@@ -1168,3 +1171,216 @@ input:focus, textarea:focus, button:focus { outline: none; }
   }
 }
 @page { margin: 0; size: letter; }
+
+/* ── Applications wizard ───────────────────────────────────────────────── */
+.badge.acc { color: var(--accent); border-color: color-mix(in oklab, var(--accent) 35%, var(--border)); background: color-mix(in oklab, var(--accent) 8%, var(--surface-2)); }
+
+.app-card .card-head { align-items: center; grid-template-columns: 1fr auto auto; }
+
+.wiz-head { gap: 14px; flex-wrap: wrap; }
+.wiz-steps { display: flex; align-items: center; gap: 4px; }
+.wiz-step {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 12px; border-radius: 999px;
+  font-size: var(--fs-sm); font-weight: 500;
+  color: var(--text-muted); background: transparent; border: 1px solid transparent;
+  cursor: pointer;
+}
+.wiz-step:hover { color: var(--text); background: var(--surface-2); }
+.wiz-step.active { color: var(--text); background: var(--surface-2); border-color: var(--border); }
+.wiz-step.done { color: var(--text-2); }
+.wiz-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 17px; height: 17px; border-radius: 50%;
+  font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums;
+  background: var(--surface-3, var(--surface-2)); border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.wiz-step.active .wiz-num { background: var(--accent); border-color: var(--accent); color: #fff; }
+.wiz-step.done .wiz-num { color: var(--ok, var(--accent)); }
+
+.sel-toolbar {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 16px;
+}
+.sel-section { margin-bottom: 22px; }
+.sel-section-title {
+  font-size: var(--fs-xs); font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.sel-entity {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-md); margin-bottom: 8px; overflow: hidden;
+}
+.sel-entity-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.sel-entity-title { font-weight: 600; font-size: var(--fs-sm); }
+.sel-entity-sub { color: var(--text-muted); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.sel-entity-count { color: var(--text-muted); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.sel-children { padding: 4px 8px; }
+.sel-bullet {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 7px 6px; border-radius: var(--r-sm, 6px);
+}
+.sel-bullet:hover { background: var(--surface-2); }
+.sel-bullet.off .sel-bullet-text { color: var(--text-faint); }
+.sel-bullet .cbx { margin-top: 2px; flex: none; }
+.sel-bullet-body { flex: 1; min-width: 0; }
+.sel-bullet-text { font-size: var(--fs-sm); line-height: 1.45; }
+.sel-skills { display: flex; flex-wrap: wrap; gap: 2px 14px; padding: 8px 12px; }
+.sel-skill {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: var(--fs-sm); padding: 4px 2px; cursor: pointer;
+}
+.sel-skill.off span { color: var(--text-faint); }
+.override-box {
+  margin-top: 8px; padding: 10px;
+  border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--border));
+  border-radius: var(--r-md);
+  background: color-mix(in oklab, var(--accent) 4%, var(--surface));
+}
+
+/* ── AI wizard extras ──────────────────────────────────────────────────── */
+.wiz-error {
+  display: flex; align-items: center; gap: 10px;
+  margin: 0 24px; padding: 8px 12px;
+  border: 1px solid color-mix(in oklab, var(--warn) 40%, var(--border));
+  background: color-mix(in oklab, var(--warn) 8%, var(--surface));
+  border-radius: var(--r-md);
+  color: var(--warn); font-size: 12px;
+}
+.jd-analysis {
+  margin-top: 18px; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface);
+}
+.gaps-panel {
+  margin-bottom: 16px; padding: 12px 14px;
+  border: 1px solid color-mix(in oklab, var(--warn) 35%, var(--border));
+  background: color-mix(in oklab, var(--warn) 5%, var(--surface));
+  border-radius: var(--r-md);
+}
+.letter-sheet {
+  background: #fff; color: #1a1a1a;
+  width: 816px; min-height: 1056px;
+  padding: 0.9in 1in;
+  box-shadow: 0 2px 24px rgba(0,0,0,0.35);
+  border-radius: 2px;
+}
+.letter-sheet textarea {
+  width: 100%; min-height: 900px;
+  background: transparent; border: 0; outline: none; resize: none;
+  color: inherit;
+  font-family: var(--font-resume, Georgia, serif); font-size: 12.5px; line-height: 1.7;
+}
+
+/* ── Resume template: Modern ───────────────────────────────────────────── */
+.resume-sheet[data-template="modern"] { padding: 50px 58px; }
+.resume-sheet[data-template="modern"] h1 {
+  font-size: 24pt; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0;
+}
+.resume-sheet[data-template="modern"] .accent-bar {
+  width: 36px; height: 4px; background: var(--accent); border-radius: 2px;
+  margin: 9px 0 10px;
+}
+.resume-sheet[data-template="modern"] .contact { font-size: 9pt; color: #52525b; }
+.resume-sheet[data-template="modern"] h2 {
+  font-size: 9.5pt; letter-spacing: 0.16em; color: #18181b;
+  border-bottom: 0; padding-bottom: 0; margin: 22px 0 4px;
+}
+.resume-sheet[data-template="modern"] .job-title { font-size: 10.5pt; color: #18181b; }
+.resume-sheet[data-template="modern"] .job-sep,
+.resume-sheet[data-template="modern"] .job-co { color: #52525b; font-weight: 500; }
+.resume-sheet[data-template="modern"] .job-date { font-size: 9pt; color: #71717a; }
+.resume-sheet[data-template="modern"] .bul { padding-left: 1em; }
+.resume-sheet[data-template="modern"] .bul li { line-height: 1.5; color: #27272a; }
+.resume-sheet[data-template="modern"] .bul li::marker { color: var(--accent); }
+.resume-sheet[data-template="modern"] .skill-row { grid-template-columns: 120px 1fr; margin: 4px 0; }
+.resume-sheet[data-template="modern"] .skill-row .lbl { font-size: 9.5pt; }
+.resume-sheet[data-template="modern"] .role { margin-top: 11px; }
+
+/* ── Resume template: Executive ────────────────────────────────────────── */
+.resume-sheet[data-template="executive"] {
+  font-family: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  padding: 54px 64px;
+}
+.resume-sheet[data-template="executive"] h1 {
+  text-align: center; font-size: 16.5pt; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 7px;
+}
+.resume-sheet[data-template="executive"] .contact {
+  justify-content: center; font-size: 9pt; color: #3f3f46;
+}
+.resume-sheet[data-template="executive"] h2 {
+  text-align: center; color: #18181b; font-size: 10pt; font-weight: 600;
+  letter-spacing: 0.24em;
+  border-bottom: 1px solid #27272a; padding-bottom: 5px; margin: 24px 0 8px;
+}
+.resume-sheet[data-template="executive"] .x-co { font-weight: 700; font-size: 10.5pt; color: #18181b; }
+.resume-sheet[data-template="executive"] .x-title { font-style: italic; color: #27272a; }
+.resume-sheet[data-template="executive"] .job-date { color: #52525b; font-size: 9.5pt; }
+.resume-sheet[data-template="executive"] .bul { padding-left: 1.15em; }
+.resume-sheet[data-template="executive"] .bul li { line-height: 1.5; color: #1f1f23; }
+.resume-sheet[data-template="executive"] .bul li::marker { color: #18181b; }
+.resume-sheet[data-template="executive"] .skill-row { grid-template-columns: 150px 1fr; }
+.resume-sheet[data-template="executive"] .role { margin-top: 12px; }
+.resume-sheet[data-template="executive"] .proj-name { font-size: 10.5pt; }
+
+/* ── Resume template: Compact ──────────────────────────────────────────── */
+.resume-sheet[data-template="compact"] { padding: 38px 46px; font-size: 9pt; }
+.resume-sheet[data-template="compact"] > div:first-child {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 18px;
+}
+.resume-sheet[data-template="compact"] h1 { font-size: 15pt; margin: 0; letter-spacing: -0.01em; }
+.resume-sheet[data-template="compact"] .contact {
+  font-size: 8pt; color: #52525b; justify-content: flex-end;
+  max-width: 46%; text-align: right; row-gap: 1px;
+}
+.resume-sheet[data-template="compact"] h2 {
+  font-size: 8.5pt; letter-spacing: 0.12em; color: #18181b;
+  margin: 12px 0 2px; padding-bottom: 2px; border-bottom: 1px solid #d4d4d8;
+}
+.resume-sheet[data-template="compact"] .role { margin-top: 6px; }
+.resume-sheet[data-template="compact"] .role:first-of-type { margin-top: 2px; }
+.resume-sheet[data-template="compact"] .job-title { font-size: 9.5pt; }
+.resume-sheet[data-template="compact"] .job-co { font-weight: 500; }
+.resume-sheet[data-template="compact"] .job-date { font-size: 8pt; }
+.resume-sheet[data-template="compact"] .bul { margin-top: 1px; padding-left: 1em; }
+.resume-sheet[data-template="compact"] .bul li { margin: 1px 0; line-height: 1.32; }
+.resume-sheet[data-template="compact"] .skill-row { margin: 1.5px 0; grid-template-columns: 108px 1fr; font-size: 8.5pt; }
+.resume-sheet[data-template="compact"] .proj-desc { font-size: 9pt; }
+
+/* ── Resume template: Sidebar ──────────────────────────────────────────── */
+.resume-sheet[data-template="sidebar"] { padding: 0; display: flex; }
+.resume-sheet[data-template="sidebar"] .sb-row { display: flex; width: 100%; min-height: 1056px; }
+.resume-sheet[data-template="sidebar"] .sb-side {
+  width: 232px; flex: none;
+  background: #EEF2F7;
+  padding: 46px 24px 40px;
+  border-right: 1px solid #E2E8F0;
+}
+.resume-sheet[data-template="sidebar"] .sb-main { flex: 1; min-width: 0; padding: 44px 42px 40px 34px; }
+.resume-sheet[data-template="sidebar"] .sb-main h1 { font-size: 22pt; font-weight: 800; letter-spacing: -0.02em; margin: 0; }
+.resume-sheet[data-template="sidebar"] .accent-bar {
+  width: 36px; height: 4px; background: var(--accent); border-radius: 2px; margin: 9px 0 4px;
+}
+.resume-sheet[data-template="sidebar"] h2 {
+  font-size: 9pt; letter-spacing: 0.15em; color: #18181b;
+  border-bottom: 0; padding-bottom: 0; margin: 20px 0 5px;
+}
+.resume-sheet[data-template="sidebar"] .sb-side h2 { margin-top: 24px; }
+.resume-sheet[data-template="sidebar"] .sb-contact { font-size: 8.5pt; color: #334155; }
+.resume-sheet[data-template="sidebar"] .sb-contact div { margin: 2px 0; word-break: break-word; }
+.resume-sheet[data-template="sidebar"] .sb-cat { margin: 0 0 8px; }
+.resume-sheet[data-template="sidebar"] .sb-cat .lbl { font-weight: 700; font-size: 8.5pt; color: #18181b; }
+.resume-sheet[data-template="sidebar"] .sb-cat .vals { font-size: 8.5pt; color: #334155; line-height: 1.5; }
+.resume-sheet[data-template="sidebar"] .sb-edu { margin: 0 0 8px; font-size: 8.5pt; }
+.resume-sheet[data-template="sidebar"] .sb-edu-deg { font-weight: 700; color: #18181b; }
+.resume-sheet[data-template="sidebar"] .sb-edu-inst { color: #334155; }
+.resume-sheet[data-template="sidebar"] .sb-edu-date { color: #64748b; font-size: 8pt; }
+.resume-sheet[data-template="sidebar"] .bul li::marker { color: var(--accent); }
+.resume-sheet[data-template="sidebar"] .job-date { font-size: 9pt; color: #64748b; }

@@ -1,10 +1,12 @@
-import type { FilteredResumeData, TemplateType, PersonalInfo, Job, SkillCategory, Education, Project, Bullet, Skill } from '../../types/resume';
+import type { FilteredResumeData, TemplateType, PersonalInfo, Job, SkillCategory, Education, Project, Bullet, Skill, Summary } from '../../types/resume';
 import { fmtDateRange } from '../../utils/date';
 
 type JobF = Job & { filteredBullets: Bullet[] };
 type CatF = SkillCategory & { filteredSkills: Skill[] };
 type EduF = Education & { filteredBullets: Bullet[] };
 type PrjF = Project & { filteredBullets: Bullet[] };
+
+type Variant = 'default' | 'executive';
 
 interface HideMap {
   jobs?: boolean;
@@ -29,25 +31,87 @@ export function ResumeSheet({
   scale = 1,
 }: ResumeSheetProps) {
   const fClass = font === 'serif' ? 'f-serif' : font === 'plex' ? 'f-plex' : '';
+  const variant: Variant = template === 'executive' ? 'executive' : 'default';
   return (
     <div
       className={'resume-sheet ' + fClass}
+      data-template={template}
       style={{ transform: `scale(${scale})` }}
     >
-      <Header info={data.personalInfo} />
-      {template === 'two-column' ? (
-        <TwoColumn data={data} hide={hideSections} />
+      {template === 'sidebar' ? (
+        <SidebarLayout data={data} hide={hideSections} />
       ) : (
-        <SingleColumn data={data} hide={hideSections} />
+        <>
+          <Header info={data.personalInfo} template={template} />
+          {template === 'two-column' ? (
+            <TwoColumn data={data} hide={hideSections} />
+          ) : (
+            <SingleColumn data={data} hide={hideSections} variant={variant} />
+          )}
+        </>
       )}
     </div>
   );
 }
 
-function Header({ info }: { info: PersonalInfo }) {
+function SidebarLayout({ data, hide }: { data: FilteredResumeData; hide: HideMap }) {
+  const info = data.personalInfo;
+  const cats = data.skillCategories as CatF[];
+  const education = data.education as EduF[];
+  const contact = [info.email, info.phone, info.location, info.linkedin, info.website].filter(
+    Boolean,
+  ) as string[];
+  return (
+    <div className="sb-row">
+      <aside className="sb-side">
+        <div className="sb-contact">
+          {contact.map((c, i) => (
+            <div key={i}>{c}</div>
+          ))}
+        </div>
+        {!hide.skills && cats.length ? (
+          <div>
+            <h2>Skills</h2>
+            {cats.map((c) => (
+              <div className="sb-cat" key={c.id}>
+                <div className="lbl">{c.name}</div>
+                <div className="vals">{c.filteredSkills.map((s) => s.name).join(' · ')}</div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {!hide.education && education.length ? (
+          <div>
+            <h2>Education</h2>
+            {education.map((ed) => (
+              <div className="sb-edu" key={ed.id}>
+                <div className="sb-edu-deg">
+                  {ed.degree}
+                  {ed.field ? ` · ${ed.field}` : ''}
+                </div>
+                <div className="sb-edu-inst">{ed.institution}</div>
+                {ed.graduationDate ? <div className="sb-edu-date">{ed.graduationDate}</div> : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </aside>
+      <div className="sb-main">
+        <h1>{info.name || 'Your Name'}</h1>
+        <div className="accent-bar" />
+        <SummaryBlock summary={data.selectedSummary} />
+        {!hide.jobs ? <ExperienceBlock jobs={data.jobs as JobF[]} variant="default" /> : null}
+        {!hide.projects ? <ProjectsBlock projects={data.projects as PrjF[]} /> : null}
+      </div>
+    </div>
+  );
+}
+
+function Header({ info, template }: { info: PersonalInfo; template: TemplateType }) {
   return (
     <div>
       <h1>{info.name || 'Your Name'}</h1>
+      {template === 'modern' ? <div className="accent-bar" /> : null}
       <div className="contact">
         {info.email ? <span>{info.email}</span> : null}
         {info.phone ? <span>· {info.phone}</span> : null}
@@ -59,13 +123,14 @@ function Header({ info }: { info: PersonalInfo }) {
   );
 }
 
-function SingleColumn({ data, hide }: { data: FilteredResumeData; hide: HideMap }) {
+function SingleColumn({ data, hide, variant }: { data: FilteredResumeData; hide: HideMap; variant: Variant }) {
   return (
     <>
-      {!hide.jobs ? <ExperienceBlock jobs={data.jobs as JobF[]} /> : null}
+      <SummaryBlock summary={data.selectedSummary} />
+      {!hide.jobs ? <ExperienceBlock jobs={data.jobs as JobF[]} variant={variant} /> : null}
       {!hide.skills ? <SkillsBlock cats={data.skillCategories as CatF[]} /> : null}
       {!hide.projects ? <ProjectsBlock projects={data.projects as PrjF[]} /> : null}
-      {!hide.education ? <EducationBlock education={data.education as EduF[]} /> : null}
+      {!hide.education ? <EducationBlock education={data.education as EduF[]} variant={variant} /> : null}
     </>
   );
 }
@@ -73,11 +138,12 @@ function SingleColumn({ data, hide }: { data: FilteredResumeData; hide: HideMap 
 function TwoColumn({ data, hide }: { data: FilteredResumeData; hide: HideMap }) {
   return (
     <>
-      {!hide.jobs ? <ExperienceBlock jobs={data.jobs as JobF[]} /> : null}
+      <SummaryBlock summary={data.selectedSummary} />
+      {!hide.jobs ? <ExperienceBlock jobs={data.jobs as JobF[]} variant="default" /> : null}
       <div className="two-col">
         <div>
           {!hide.projects ? <ProjectsBlock projects={data.projects as PrjF[]} /> : null}
-          {!hide.education ? <EducationBlock education={data.education as EduF[]} /> : null}
+          {!hide.education ? <EducationBlock education={data.education as EduF[]} variant="default" /> : null}
         </div>
         <div>{!hide.skills ? <SkillsBlock cats={data.skillCategories as CatF[]} /> : null}</div>
       </div>
@@ -85,24 +151,47 @@ function TwoColumn({ data, hide }: { data: FilteredResumeData; hide: HideMap }) 
   );
 }
 
-function ExperienceBlock({ jobs }: { jobs: JobF[] }) {
+/** Renders above Experience. Absent when the application selects no summary. */
+function SummaryBlock({ summary }: { summary?: Summary }) {
+  if (!summary?.text.trim()) return null;
+  return (
+    <div className="r-summary">
+      <p>{summary.text}</p>
+    </div>
+  );
+}
+
+function ExperienceBlock({ jobs, variant }: { jobs: JobF[]; variant: Variant }) {
   if (!jobs.length) return null;
   return (
     <div>
       <h2>Experience</h2>
       {jobs.map((j) => (
         <div className="role" key={j.id}>
-          <div className="job-h">
-            <div>
-              <span className="job-title">{j.title}</span>
-              <span style={{ color: '#666' }}> · </span>
-              <span className="job-co">{j.company}</span>
+          {variant === 'executive' ? (
+            <>
+              <div className="job-h">
+                <span className="x-co">{j.company}</span>
+                <span className="job-date">{fmtDateRange(j.startDate, j.endDate)}</span>
+              </div>
+              <div className="job-h">
+                <span className="x-title">{j.title}</span>
+                {j.location ? <span className="job-date">{j.location}</span> : null}
+              </div>
+            </>
+          ) : (
+            <div className="job-h">
+              <div>
+                <span className="job-title">{j.title}</span>
+                <span className="job-sep"> · </span>
+                <span className="job-co">{j.company}</span>
+              </div>
+              <div className="job-date">
+                {fmtDateRange(j.startDate, j.endDate)}
+                {j.location ? ` · ${j.location}` : ''}
+              </div>
             </div>
-            <div className="job-date">
-              {fmtDateRange(j.startDate, j.endDate)}
-              {j.location ? ` · ${j.location}` : ''}
-            </div>
-          </div>
+          )}
           {j.filteredBullets.length > 0 ? (
             <ul className="bul">
               {j.filteredBullets.map((b) => (
@@ -156,21 +245,36 @@ function ProjectsBlock({ projects }: { projects: PrjF[] }) {
   );
 }
 
-function EducationBlock({ education }: { education: EduF[] }) {
+function EducationBlock({ education, variant }: { education: EduF[]; variant: Variant }) {
   if (!education.length) return null;
   return (
     <div>
       <h2>Education</h2>
       {education.map((ed) => (
         <div className="role" key={ed.id}>
-          <div className="job-h">
-            <div>
-              <span className="job-title">{ed.degree}</span>
-              {ed.field ? <span style={{ color: '#444' }}> · {ed.field}</span> : null}
-            </div>
-            <div className="job-date">{ed.graduationDate || ''}</div>
-          </div>
-          <div className="job-co">{ed.institution}</div>
+          {variant === 'executive' ? (
+            <>
+              <div className="job-h">
+                <span className="x-co">{ed.institution}</span>
+                <span className="job-date">{ed.graduationDate || ''}</span>
+              </div>
+              <div className="x-title">
+                {ed.degree}
+                {ed.field ? ` · ${ed.field}` : ''}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="job-h">
+                <div>
+                  <span className="job-title">{ed.degree}</span>
+                  {ed.field ? <span style={{ color: '#444' }}> · {ed.field}</span> : null}
+                </div>
+                <div className="job-date">{ed.graduationDate || ''}</div>
+              </div>
+              <div className="job-co">{ed.institution}</div>
+            </>
+          )}
           {ed.filteredBullets.length > 0 ? (
             <ul className="bul">
               {ed.filteredBullets.map((b) => (

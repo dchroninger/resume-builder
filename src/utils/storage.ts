@@ -1,6 +1,9 @@
-import type { ResumeData } from '../types/resume';
+import type { ResumeData, Application, TemplateType } from '../types/resume';
+import { migrateResumeData } from './migrate';
 
 const STORAGE_KEY = 'resume-builder-data';
+const SCHEMA_KEY = 'cv-studio-schema-version';
+const SCHEMA_VERSION = 2;
 
 export function getEmptyResumeData(): ResumeData {
   return {
@@ -9,22 +12,34 @@ export function getEmptyResumeData(): ResumeData {
     skillCategories: [],
     education: [],
     projects: [],
+    summaries: [],
   };
 }
 
 export function loadResumeData(): ResumeData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      let data: ResumeData = JSON.parse(raw);
+      const ver = Number(localStorage.getItem(SCHEMA_KEY) || 1);
+      if (ver < SCHEMA_VERSION) {
+        data = migrateResumeData(data);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        localStorage.setItem(SCHEMA_KEY, String(SCHEMA_VERSION));
+      }
+      return data;
+    }
   } catch (e) {
     console.error('Failed to load resume data:', e);
   }
+  localStorage.setItem(SCHEMA_KEY, String(SCHEMA_VERSION));
   return getEmptyResumeData();
 }
 
 export function saveResumeData(data: ResumeData): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    localStorage.setItem(SCHEMA_KEY, String(SCHEMA_VERSION));
   } catch (e) {
     console.error('Failed to save resume data:', e);
   }
@@ -34,39 +49,32 @@ export function clearResumeData(): void {
   localStorage.removeItem(STORAGE_KEY);
 }
 
-// Saved tag-filter presets (separate localStorage key).
-const PRESETS_KEY = 'resume-builder-presets';
+// ── Applications ────────────────────────────────────────────────────────────
+const APPLICATIONS_KEY = 'cv-studio-applications';
 
-export interface TagPreset {
-  id: string;
-  name: string;
-  tags: string[];
-  logicByNs?: Record<string, 'or' | 'and'>;
-}
-
-export function loadPresets(): TagPreset[] {
+export function loadApplications(): Application[] {
   try {
-    const raw = localStorage.getItem(PRESETS_KEY);
+    const raw = localStorage.getItem(APPLICATIONS_KEY);
     if (raw) return JSON.parse(raw);
   } catch (e) {
-    console.error('Failed to load presets:', e);
+    console.error('Failed to load applications:', e);
   }
   return [];
 }
 
-export function savePresets(presets: TagPreset[]): void {
+export function saveApplications(apps: Application[]): void {
   try {
-    localStorage.setItem(PRESETS_KEY, JSON.stringify(presets));
+    localStorage.setItem(APPLICATIONS_KEY, JSON.stringify(apps));
   } catch (e) {
-    console.error('Failed to save presets:', e);
+    console.error('Failed to save applications:', e);
   }
 }
 
-// Generator settings (template, font, etc.) persisted separately.
+// ── Settings (template, font, etc.) ─────────────────────────────────────────
 const SETTINGS_KEY = 'resume-builder-settings';
 
 export interface AppSettings {
-  template: 'single-column' | 'two-column';
+  template: TemplateType;
   font: 'sans' | 'plex' | 'serif';
   aesthetic: 'linear' | 'vercel' | 'anthropic' | 'editorial';
   dark: boolean;
@@ -75,7 +83,7 @@ export interface AppSettings {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  template: 'single-column',
+  template: 'modern',
   font: 'sans',
   aesthetic: 'linear',
   dark: true,

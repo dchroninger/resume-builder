@@ -1,20 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import type { ResumeData } from './types/resume';
+import type { Application, ResumeData } from './types/resume';
 import {
   loadResumeData,
   saveResumeData,
   getEmptyResumeData,
+  loadApplications,
+  saveApplications,
   loadSettings,
   saveSettings,
   type AppSettings,
 } from './utils/storage';
 import { exportToJson, importFromJsonFile, generateId } from './utils/export';
+import { parseResume, fileToBase64 } from './lib/ai';
 
 import { useUndoRedo } from './hooks/useUndoRedo';
 import { useTags } from './hooks/useTags';
 import { useSaveStatus } from './hooks/useSaveStatus';
 import { useKeyboard } from './hooks/useKeyboard';
+import { useAuth } from './hooks/useAuth';
+import { useSync } from './hooks/useSync';
 
 import { Button } from './components/ui/Button';
 import { SaveStatus } from './components/ui/SaveStatus';
@@ -30,7 +35,8 @@ import { useDragReorder, reorderById } from './components/Editor/useDragReorder'
 
 import { TagManager } from './components/TagManager/TagManager';
 import { CommandPalette, type CommandTarget } from './components/CommandPalette/CommandPalette';
-import { Generator } from './components/Generator/Generator';
+import { ApplicationsView } from './components/Applications/ApplicationsView';
+import { AuthModal } from './components/Auth/AuthModal';
 
 type SectionKey = 'personal' | 'jobs' | 'skills' | 'education' | 'projects';
 
@@ -65,8 +71,28 @@ export default function App() {
     saveResumeData(data);
   }, [data]);
 
+  // ── Applications (per-job tailored resumes) ───────────────────────────────
+  const [apps, setApps] = useState<Application[]>(loadApplications);
+  useEffect(() => {
+    saveApplications(apps);
+  }, [apps]);
+
+  // ── Auth + cloud sync ─────────────────────────────────────────────────────
+  const auth = useAuth();
+  const [authOpen, setAuthOpen] = useState(false);
+  const syncState = useSync({
+    user: auth.user,
+    data,
+    apps,
+    onRemote: (remoteResume, remoteApps) => {
+      if (remoteResume) replace(remoteResume);
+      if (remoteApps.length) setApps(() => remoteApps);
+      setAuthOpen(false);
+    },
+  });
+
   // ── App state ─────────────────────────────────────────────────────────────
-  const [mode, setMode] = useState<'edit' | 'generate'>('edit');
+  const [mode, setMode] = useState<'edit' | 'applications'>('edit');
   const [section, setSection] = useState<SectionKey>('jobs');
   const [cmdOpen, setCmdOpen] = useState(false);
   const [tagMgrOpen, setTagMgrOpen] = useState(false);
@@ -199,6 +225,32 @@ export default function App() {
     }));
   };
 
+  // AI import: resume PDF -> parsed library
+  const [importingPdf, setImportingPdf] = useState(false);
+  const handleImportPdf = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/pdf,.pdf';
+    input.onchange = async () => {
+      const f = input.files?.[0];
+      if (!f) return;
+      setImportingPdf(true);
+      try {
+        const fileBase64 = await fileToBase64(f);
+        const parsed = await parseResume({ fileBase64, mediaType: 'application/pdf' });
+        const counts = `${parsed.jobs.length} roles, ${parsed.jobs.reduce((n, j) => n + j.bullets.length, 0)} bullets, ${parsed.skillCategories.length} skill categories`;
+        if (!confirm(`Parsed ${counts}. Replace current library? You can Undo afterward.`)) return;
+        replace(parsed);
+        setExpanded(new Set());
+      } catch (e) {
+        alert('Import failed: ' + (e as Error).message);
+      } finally {
+        setImportingPdf(false);
+      }
+    };
+    input.click();
+  };
+
   // Import / Export
   const handleImportJson = async () => {
     try {
@@ -242,14 +294,54 @@ export default function App() {
           <button className={mode === 'edit' ? 'active' : ''} onClick={() => setMode('edit')}>
             <Icon.Sliders size={12} stroke={2} /> Edit
           </button>
-          <button className={mode === 'generate' ? 'active' : ''} onClick={() => setMode('generate')}>
-            <Icon.Sparkles size={12} stroke={2} /> Generate
+          <button
+            className={mode === 'applications' ? 'active' : ''}
+            onClick={() => setMode('applications')}
+          >
+            <Icon.Sparkles size={12} stroke={2} /> Applications
+            {apps.length ? <span className="nav-count">{apps.length}</span> : null}
           </button>
         </div>
 
         <span style={{ flex: 1 }} />
 
         <SaveStatus status={saveStatus} />
+
+        {auth.configured ? (
+          auth.user ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              tip={
+                syncState === 'synced'
+                  ? 'Synced to cloud — click to sign out'
+                  : syncState === 'pulling'
+                    ? 'Syncing…'
+                    : syncState === 'error'
+                      ? 'Sync error — see console'
+                      : 'Signed in'
+              }
+              onClick={() => {
+                if (confirm(`Sign out ${auth.user?.email}?`)) auth.signOut();
+              }}
+            >
+              <span
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: 99,
+                  background:
+                    syncState === 'error' ? 'var(--warn)' : syncState === 'synced' ? 'var(--ok, #4CC58C)' : 'var(--text-faint)',
+                }}
+              />
+              {auth.user.email}
+            </Button>
+          ) : (
+            <Button size="sm" variant="ghost" icon={Icon.User} onClick={() => setAuthOpen(true)}>
+              Sign in
+            </Button>
+          )
+        ) : null}
 
         <button
           className="btn ghost sm"
@@ -309,6 +401,16 @@ export default function App() {
               ))}
             </nav>
             <div className="sidebar-foot">
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={Icon.Sparkles}
+                disabled={!auth.user || importingPdf}
+                onClick={handleImportPdf}
+                tip={auth.user ? 'Parse a resume PDF into your library with AI' : 'Sign in to import a PDF'}
+              >
+                {importingPdf ? 'Parsing…' : 'Import resume (PDF)'}
+              </Button>
               <Button size="sm" variant="ghost" icon={Icon.Upload} onClick={handleImportJson}>
                 Import JSON
               </Button>
@@ -342,13 +444,13 @@ export default function App() {
         </div>
       ) : (
         <div className="body no-sidebar">
-          <Generator
+          <ApplicationsView
             data={data}
-            allTags={allTags}
-            template={settings.template}
-            setTemplate={(v) => setSetting('template', v)}
-            font={settings.font}
-            setFont={(v) => setSetting('font', v)}
+            apps={apps}
+            setApps={setApps}
+            settings={settings}
+            setSetting={setSetting}
+            aiEnabled={!!auth.user}
           />
         </div>
       )}
@@ -382,6 +484,13 @@ export default function App() {
         data={data}
         onRename={globalRename}
         onDelete={globalDelete}
+      />
+
+      <AuthModal
+        open={authOpen}
+        onClose={() => setAuthOpen(false)}
+        onEmail={auth.signInWithEmail}
+        onGithub={auth.signInWithGithub}
       />
     </div>
   );

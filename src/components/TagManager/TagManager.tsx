@@ -4,7 +4,6 @@ import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { Icon } from '../ui/Icons';
 import { Chip } from '../TagInput/Chip';
-import { NS_ORDER, parseTag, nsColor } from '../../utils/tag-namespace';
 
 interface TagManagerProps {
   open: boolean;
@@ -62,16 +61,11 @@ export function TagManager({ open, onClose, data, onRename, onDelete }: TagManag
     return m;
   }, [data]);
 
-  const grouped = useMemo(() => {
-    const g: Record<string, { tag: string; count: number; refs: TagRef[] }[]> = {};
-    Array.from(tagMap.entries()).forEach(([tag, info]) => {
-      const { ns } = parseTag(tag);
-      if (!g[ns]) g[ns] = [];
-      if (filter && !tag.toLowerCase().includes(filter.toLowerCase())) return;
-      g[ns].push({ tag, ...info });
-    });
-    Object.keys(g).forEach((ns) => g[ns].sort((a, b) => b.count - a.count));
-    return g;
+  const list = useMemo(() => {
+    return Array.from(tagMap.entries())
+      .filter(([tag]) => !filter || tag.toLowerCase().includes(filter.toLowerCase()))
+      .map(([tag, info]) => ({ tag, ...info }))
+      .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
   }, [tagMap, filter]);
 
   return (
@@ -106,31 +100,14 @@ export function TagManager({ open, onClose, data, onRename, onDelete }: TagManag
     >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 18, minHeight: 460 }}>
         <div>
-          {NS_ORDER.map((ns) => {
-            const list = grouped[ns];
-            if (!list || !list.length) return null;
-            return (
-              <div key={ns} style={{ marginBottom: 16 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 99, background: nsColor(ns) }} />
-                  <span
-                    style={{
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: 11,
-                      fontWeight: 600,
-                      color: 'var(--text)',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.06em',
-                    }}
-                  >
-                    {ns}
-                  </span>
-                  <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
-                    {list.length} tag{list.length === 1 ? '' : 's'}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  {list.map(({ tag, count }) => {
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+                {list.length} tag{list.length === 1 ? '' : 's'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              {list.map(({ tag, count }) => {
                     const isRen = renaming && renaming.tag === tag;
                     return (
                       <div
@@ -214,12 +191,10 @@ export function TagManager({ open, onClose, data, onRename, onDelete }: TagManag
                         </span>
                       </div>
                     );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-          {Object.keys(grouped).every((ns) => !grouped[ns]?.length) ? (
+              })}
+            </div>
+          </div>
+          {list.length === 0 ? (
             <div className="empty">
               <div className="e-title">No tags match</div>
               <div className="e-sub">Try a different search term.</div>

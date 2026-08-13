@@ -7,6 +7,7 @@ import { BulletRow } from './BulletRow';
 import { useDragReorder, reorderById, type DragHandlers } from './useDragReorder';
 import { fmtDateRange } from '../../utils/date';
 import { generateId } from '../../utils/export';
+import { isActive } from '../../utils/selection';
 import type { ChipVariant } from '../TagInput/Chip';
 
 interface JobCardProps {
@@ -46,6 +47,12 @@ export function JobCard({
   const bulletDnd = useDragReorder((from, to) =>
     onChange({ ...job, bullets: reorderById(job.bullets, from, to) }),
   );
+
+  // Only the render list is filtered — every mutation above still operates on
+  // the full `job.bullets`, so retired bullets keep their position and are
+  // never silently dropped on edit, clone, or reorder.
+  const visible = job.bullets.filter(isActive);
+  const retiredCount = job.bullets.length - visible.length;
 
   return (
     <div
@@ -147,14 +154,19 @@ export function JobCard({
             >
               Bullets
             </h2>
-            <span className="count">{job.bullets.length}</span>
+            <span className="count">{visible.length}</span>
+            {retiredCount > 0 ? (
+              <span className="e-sub" style={{ color: 'var(--text-muted)' }}>
+                +{retiredCount} retired
+              </span>
+            ) : null}
             <span className="grow" />
             <Button size="sm" icon={Icon.Plus} onClick={addBullet}>
               Add bullet
             </Button>
           </div>
 
-          {job.bullets.map((b) => (
+          {visible.map((b) => (
             <BulletRow
               key={b.id}
               bullet={b}
@@ -169,7 +181,7 @@ export function JobCard({
               dragHandlers={bulletDnd}
             />
           ))}
-          {job.bullets.length === 0 ? (
+          {visible.length === 0 ? (
             <div className="empty" style={{ padding: '20px 16px', margin: '8px 0' }}>
               <div className="e-sub">No bullets yet for this role.</div>
               <Button icon={Icon.Plus} onClick={addBullet}>Add the first bullet</Button>

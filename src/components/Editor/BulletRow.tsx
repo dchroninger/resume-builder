@@ -80,12 +80,21 @@ export function BulletRow({
           <span className={'char-count' + (warn ? ' warn' : '')}>
             {len} chars{len ? ' · sweet spot 110–180' : ''}
           </span>
+          {bullet.pinned ? <span className="badge dot">pinned</span> : null}
           {bullet.tags.length === 0 ? (
             <span className="badge warn dot">untagged</span>
           ) : null}
         </div>
       </div>
       <div className="b-actions">
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={Icon.Star}
+          tip={bullet.pinned ? 'Unpin' : 'Pin — pre-select in every new application'}
+          style={bullet.pinned ? { color: 'var(--warn)' } : undefined}
+          onClick={() => onChange({ ...bullet, pinned: !bullet.pinned })}
+        />
         <Button variant="ghost" size="sm" icon={Icon.Copy} tip="Clone bullet" onClick={onClone} />
         <Button variant="ghost" size="sm" icon={Icon.Trash} tip="Delete" onClick={onDelete} />
       </div>
