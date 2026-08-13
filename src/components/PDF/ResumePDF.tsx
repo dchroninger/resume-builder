@@ -57,7 +57,11 @@ function makeStyles(accent: string, f: Font, template: TemplateType) {
           fontSize: compact ? 15 : modern ? 24 : 22,
           fontFamily: fontBold(ff),
           letterSpacing: -0.4,
-          marginBottom: compact ? 0 : 3,
+          // 'modern' gets its clearance from the accent bar rendered below the
+          // name; everything else here has no spacer element, so at this font
+          // size 3pt isn't enough and the contact line visually creeps into
+          // the name's descenders.
+          marginBottom: compact ? 0 : modern ? 3 : 14,
         },
     accentBar: { width: 34, height: 3.5, backgroundColor: accent, borderRadius: 2, marginTop: 4, marginBottom: 8 },
     contact: compact
