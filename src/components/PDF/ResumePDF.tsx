@@ -29,6 +29,7 @@ function makeStyles(accent: string, f: Font, template: TemplateType) {
   const modern = template === 'modern';
   const executive = template === 'executive';
   const compact = template === 'compact';
+  const singleColumn = template === 'single-column';
 
   return StyleSheet.create({
     page: {
@@ -133,7 +134,11 @@ function makeStyles(accent: string, f: Font, template: TemplateType) {
     bulletDot: { width: compact ? 8 : 10, color: modern ? accent : executive ? '#18181B' : '#444' },
     bulletText: { flex: 1, color: executive ? '#1F1F23' : '#222' },
     skillRow: { flexDirection: 'row', marginTop: compact ? 1.5 : 3 },
-    skillLabel: { width: executive ? 130 : compact ? 95 : 110, fontFamily: fontBold(ff), color: '#222' },
+    skillLabel: {
+      width: executive ? 130 : compact ? 95 : singleColumn ? 220 : 110,
+      fontFamily: fontBold(ff),
+      color: '#222',
+    },
     skillValues: { flex: 1, color: '#333' },
     twoColRow: { flexDirection: 'row', marginTop: 8, gap: 24 },
     twoColLeft: { flex: 1.4 },

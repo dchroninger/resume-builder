@@ -1354,6 +1354,11 @@ input:focus, textarea:focus, button:focus { outline: none; }
 .resume-sheet[data-template="compact"] .skill-row { margin: 1.5px 0; grid-template-columns: 108px 1fr; font-size: 8.5pt; }
 .resume-sheet[data-template="compact"] .proj-desc { font-size: 9pt; }
 
+/* ── Resume template: Single-column ──────────────────────────────────────
+   No override elsewhere falls back to the shared 130px .skill-row default;
+   this template wants a wider label column so it gets its own rule. */
+.resume-sheet[data-template="single-column"] .skill-row { grid-template-columns: 260px 1fr; }
+
 /* ── Resume template: Sidebar ──────────────────────────────────────────── */
 .resume-sheet[data-template="sidebar"] { padding: 0; display: flex; }
 .resume-sheet[data-template="sidebar"] .sb-row { display: flex; width: 100%; min-height: 1056px; }
